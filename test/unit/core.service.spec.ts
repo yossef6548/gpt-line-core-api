@@ -39,6 +39,19 @@ describe('CoreService', () => {
       andWhere: jest.fn().mockReturnThis(),
       getCount: jest.fn().mockResolvedValue(0),
     });
+    accounts.createQueryBuilder.mockReturnValue({
+      addSelect: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getRawAndEntities: jest.fn().mockResolvedValue({ entities: [], raw: [] }),
+      clone: jest.fn().mockReturnValue({
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(0),
+      }),
+    });
     service = new CoreService(ds, redis, accounts as any, packages as any, calls as any, commands as any, ledger as any, credits as any, audits as any);
   });
 
@@ -173,8 +186,34 @@ describe('CoreService', () => {
     expect(calls.save).toHaveBeenCalledTimes(1);
     calls.save.mockClear();
     await service.bridgeEnded({ call_session_id: 'c1', phone_e164: '+972', ended_at: '2026-01-01T00:00:11Z', reason: 'caller_hangup' });
-    expect(calls.save).toHaveBeenCalledTimes(1);
+    expect(calls.save).toHaveBeenCalledTimes(0);
     expect(session.bridge_ended_reason).toBe('star_exit');
+  });
+
+  it('admin list returns computed fields and paging metadata', async () => {
+    const qb = {
+      addSelect: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getRawAndEntities: jest.fn().mockResolvedValue({
+        entities: [{ phone_e164: '+972', status: 'active', remaining_seconds: 100 }],
+        raw: [{ last_call_at: '2026-03-01T00:00:00.000Z', lifetime_purchased_seconds: '900', lifetime_consumed_seconds: '400' }],
+      }),
+      clone: jest.fn().mockReturnValue({
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(1),
+      }),
+    };
+    accounts.createQueryBuilder.mockReturnValue(qb);
+    const res = await service.adminListAccounts(undefined, undefined, 0);
+    expect(res.page).toBe(1);
+    expect(res.limit).toBe(50);
+    expect(res.total).toBe(1);
+    expect(res.items[0].lifetime_purchased_seconds).toBe(900);
+    expect(res.items[0].lifetime_consumed_seconds).toBe(400);
   });
 
   it('end call validates session phone match', async () => {

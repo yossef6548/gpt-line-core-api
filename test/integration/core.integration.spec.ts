@@ -166,6 +166,8 @@ describe('Core API integration', () => {
       .expect(201);
 
     expect(dup.body.remaining_seconds).toBe(firstBalance);
+    const ledgerRows = await ds.query("SELECT count(*)::int as c FROM balance_ledger WHERE phone_e164 = $1 AND entry_type = 'purchase_credit' AND reference_id = 'txn_2'", [phone]);
+    expect(ledgerRows[0].c).toBe(1);
   });
 
   it('end call decrements balance and releases lock', async () => {
@@ -240,5 +242,35 @@ describe('Core API integration', () => {
       .set(adminAuth)
       .send({ reason: 'reset' })
       .expect(400);
+  });
+
+  it('admin account detail returns recent calls/purchases/ledger', async () => {
+    const detail = await request(app.getHttpServer())
+      .get(`/admin/accounts/${encodeURIComponent(phone)}`)
+      .set(adminAuth)
+      .expect(200);
+
+    expect(detail.body.account_summary.phone_e164).toBe(phone);
+    expect(Array.isArray(detail.body.recent_calls)).toBe(true);
+    expect(Array.isArray(detail.body.recent_purchases)).toBe(true);
+    expect(Array.isArray(detail.body.recent_ledger_items)).toBe(true);
+    expect(detail.body.recent_counts.calls).toBe(detail.body.recent_calls.length);
+    expect(detail.body.recent_counts.purchases).toBe(detail.body.recent_purchases.length);
+    expect(detail.body.recent_counts.ledger_items).toBe(detail.body.recent_ledger_items.length);
+  });
+
+  it('admin account list returns computed fields', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/admin/accounts?page=1')
+      .set(adminAuth)
+      .expect(200);
+
+    const target = list.body.items.find((item: any) => item.phone_e164 === phone);
+    expect(target).toBeDefined();
+    expect(target).toHaveProperty('last_call_at');
+    expect(target).toHaveProperty('lifetime_purchased_seconds');
+    expect(target).toHaveProperty('lifetime_consumed_seconds');
+    expect(list.body).toHaveProperty('limit');
+    expect(list.body).toHaveProperty('total');
   });
 });

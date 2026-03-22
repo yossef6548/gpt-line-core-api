@@ -234,13 +234,16 @@ export class CoreService {
     const session = await this.calls.findOneBy({ call_session_id: payload.call_session_id });
     if (!session || session.phone_e164 !== payload.phone_e164) return { ok: true };
 
+    let changed = false;
     if (!session.bridge_ended_at) {
       session.bridge_ended_at = new Date(payload.ended_at);
+      changed = true;
     }
     if (!session.bridge_ended_reason) {
       session.bridge_ended_reason = payload.reason;
+      changed = true;
     }
-    await this.calls.save(session);
+    if (changed) await this.calls.save(session);
     return { ok: true };
   }
 
@@ -352,6 +355,7 @@ export class CoreService {
 
   async adminListAccounts(search?: string, status?: string, page = 1): Promise<any> {
     const limit = 50;
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const qb = this.accounts.createQueryBuilder('a')
       .addSelect('(SELECT MAX(cs.started_at) FROM call_sessions cs WHERE cs.phone_e164 = a.phone_e164)', 'last_call_at')
       .addSelect('(SELECT COALESCE(SUM(pc.granted_seconds), 0) FROM purchase_credits pc WHERE pc.phone_e164 = a.phone_e164)', 'lifetime_purchased_seconds')
@@ -360,8 +364,9 @@ export class CoreService {
     if (search) qb.andWhere('a.phone_e164 ILIKE :search', { search: `%${search}%` });
     if (status) qb.andWhere('a.status = :status', { status });
 
-    qb.orderBy('a.created_at', 'DESC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('a.created_at', 'DESC').skip((safePage - 1) * limit).take(limit);
     const { entities, raw } = await qb.getRawAndEntities();
+    const total = await qb.clone().skip(undefined).take(undefined).getCount();
 
     return {
       items: entities.map((entity, idx) => ({
@@ -370,7 +375,9 @@ export class CoreService {
         lifetime_purchased_seconds: Number(raw[idx].lifetime_purchased_seconds ?? 0),
         lifetime_consumed_seconds: Number(raw[idx].lifetime_consumed_seconds ?? 0),
       })),
-      page,
+      page: safePage,
+      limit,
+      total,
     };
   }
 
@@ -402,6 +409,11 @@ export class CoreService {
       recent_calls: recentCalls,
       recent_purchases: recentPurchases,
       recent_ledger_items: recentLedger,
+      recent_counts: {
+        calls: recentCalls.length,
+        purchases: recentPurchases.length,
+        ledger_items: recentLedger.length,
+      },
     };
   }
 

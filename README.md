@@ -9,6 +9,8 @@ Core business API for GPT-Line (NestJS + TypeScript + PostgreSQL + Redis + TypeO
   - `bridge-ended` persists bridge termination metadata (`bridge_ended_at`, `bridge_ended_reason`) idempotently and never debits balance.
 - Payments: idempotent credit apply by `payment_txn_id`.
 - Admin: summary, account list/detail, block/unblock, credit/debit, call list/detail, terminate active call.
+  - Admin account detail includes account summary + recent calls/purchases/ledger (with recent-count helpers).
+  - Admin account list includes computed `last_call_at`, `lifetime_purchased_seconds`, and `lifetime_consumed_seconds` fields.
 - Balance ledger + admin audit log for all mutating balance/admin operations.
 - Redis active-call lock with stale-lock reconciliation against PostgreSQL and safe lock release by lock owner.
   - If Redis lock exists, reconciliation checks both lock owner session and active-call rows in PostgreSQL before treating lock as stale.
