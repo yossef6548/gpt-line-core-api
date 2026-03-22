@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { join } from 'path';
 import envConfig from './config/env';
 import { AccountEntity } from './entities/account.entity';
 import { PackageEntity } from './entities/package.entity';
@@ -35,7 +36,9 @@ const entities = [
         type: 'postgres',
         url: config.getOrThrow<string>('databaseUrl'),
         entities,
-        synchronize: process.env.NODE_ENV === 'test',
+        synchronize: false,
+        migrations: [join(process.cwd(), 'migrations/*{.ts,.js}')],
+        migrationsRun: true,
       }),
     }),
     TypeOrmModule.forFeature(entities),

@@ -1,12 +1,18 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CoreService } from '../services/core.service';
-import { AdminAdjustDto } from '../dto/internal.dto';
+import { AdminAdjustDto, AdminReasonDto, AdminTerminateDto } from '../dto/internal.dto';
 import { AdminTokenGuard } from '../guards/admin-token.guard';
 
 @Controller('/admin')
 @UseGuards(AdminTokenGuard)
 export class AdminController {
   constructor(private readonly core: CoreService) {}
+
+  private requireIdentity(identity?: string): string {
+    const trimmed = identity?.trim();
+    if (!trimmed) throw new BadRequestException('x-admin-identity header is required');
+    return trimmed;
+  }
 
   @Get('/summary')
   summary() { return this.core.adminSummary(); }
@@ -20,19 +26,23 @@ export class AdminController {
   getAccount(@Param('phone_e164') phone: string) { return this.core.adminGetAccount(phone); }
 
   @Post('/accounts/:phone_e164/block')
-  block(@Param('phone_e164') phone: string, @Headers('x-admin-identity') identity = 'unknown') { return this.core.adminSetStatus(phone, 'blocked', identity); }
+  block(@Param('phone_e164') phone: string, @Body() body: AdminReasonDto, @Headers('x-admin-identity') identity?: string) {
+    return this.core.adminSetStatus(phone, 'blocked', this.requireIdentity(identity), body.reason);
+  }
 
   @Post('/accounts/:phone_e164/unblock')
-  unblock(@Param('phone_e164') phone: string, @Headers('x-admin-identity') identity = 'unknown') { return this.core.adminSetStatus(phone, 'active', identity); }
+  unblock(@Param('phone_e164') phone: string, @Body() body: AdminReasonDto, @Headers('x-admin-identity') identity?: string) {
+    return this.core.adminSetStatus(phone, 'active', this.requireIdentity(identity), body.reason);
+  }
 
   @Post('/accounts/:phone_e164/credit')
-  credit(@Param('phone_e164') phone: string, @Body() body: AdminAdjustDto, @Headers('x-admin-identity') identity = 'unknown') {
-    return this.core.adminAdjust(phone, body.seconds, 'credit', identity);
+  credit(@Param('phone_e164') phone: string, @Body() body: AdminAdjustDto, @Headers('x-admin-identity') identity?: string) {
+    return this.core.adminAdjust(phone, body.seconds, 'credit', this.requireIdentity(identity), body.reason);
   }
 
   @Post('/accounts/:phone_e164/debit')
-  debit(@Param('phone_e164') phone: string, @Body() body: AdminAdjustDto, @Headers('x-admin-identity') identity = 'unknown') {
-    return this.core.adminAdjust(phone, body.seconds, 'debit', identity);
+  debit(@Param('phone_e164') phone: string, @Body() body: AdminAdjustDto, @Headers('x-admin-identity') identity?: string) {
+    return this.core.adminAdjust(phone, body.seconds, 'debit', this.requireIdentity(identity), body.reason);
   }
 
   @Get('/calls')
@@ -44,7 +54,7 @@ export class AdminController {
   getCall(@Param('call_session_id') id: string) { return this.core.adminGetCall(id); }
 
   @Post('/calls/:call_session_id/terminate')
-  terminate(@Param('call_session_id') id: string, @Headers('x-admin-identity') identity = 'unknown') {
-    return this.core.adminTerminate(id, identity);
+  terminate(@Param('call_session_id') id: string, @Body() body: AdminTerminateDto, @Headers('x-admin-identity') identity?: string) {
+    return this.core.adminTerminate(id, this.requireIdentity(identity), body.reason);
   }
 }

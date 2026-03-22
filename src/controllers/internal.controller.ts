@@ -55,8 +55,8 @@ export class InternalController {
   }
 
   @Post('/internal/events/bridge-ended')
-  bridgeEnded(@Body() _body: BridgeEndedDto) {
-    return this.core.bridgeEnded();
+  bridgeEnded(@Body() body: BridgeEndedDto) {
+    return this.core.bridgeEnded(body);
   }
 
   @Post('/internal/payments/credit')
