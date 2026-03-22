@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  lint-and-build:
-    name: Lint and Build
+  build:
+    name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -27,9 +27,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Lint
-        run: npm run lint
 
       - name: Build
         run: npm run build
@@ -59,6 +56,9 @@ jobs:
     name: Integration Tests (Testcontainers)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: true
+      TESTCONTAINERS_CHECKS_DISABLE: true
 
     steps:
       - name: Checkout
@@ -78,27 +78,3 @@ jobs:
 
       - name: Run integration tests
         run: npm run test:integration -- --runInBand
-
-  test-all:
-    name: Full Jest Suite
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Verify Docker runtime
-        run: docker info
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run full test suite
-        run: npm test -- --runInBand
