@@ -35,6 +35,8 @@ export class InitSchema1710000000000 implements MigrationInterface {
         ended_reason TEXT CHECK (ended_reason IN ('star_exit','caller_hangup','time_expired','system_error','backend_revoke','openai_error','bridge_error','telephony_disconnect')),
         billed_seconds INTEGER CHECK (billed_seconds >= 0),
         preflight_remaining_seconds INTEGER NOT NULL CHECK (preflight_remaining_seconds >= 0),
+        bridge_ended_at TIMESTAMPTZ,
+        bridge_ended_reason TEXT CHECK (bridge_ended_reason IN ('star_exit','caller_hangup','time_expired','system_error','backend_revoke','openai_error','bridge_error','telephony_disconnect')) ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS balance_ledger (
@@ -86,7 +88,13 @@ export class InitSchema1710000000000 implements MigrationInterface {
         ('P10',2,'עשר דקות',5000,600,true,2),
         ('P20',3,'עשרים דקות',9000,1200,true,3),
         ('P40',4,'ארבעים דקות',16000,2400,true,4)
-      ON CONFLICT (package_code) DO NOTHING;
+      ON CONFLICT (package_code) DO UPDATE SET
+        keypad_digit = EXCLUDED.keypad_digit,
+        name_he = EXCLUDED.name_he,
+        price_agorot = EXCLUDED.price_agorot,
+        granted_seconds = EXCLUDED.granted_seconds,
+        active = EXCLUDED.active,
+        display_order = EXCLUDED.display_order;
     `);
   }
 

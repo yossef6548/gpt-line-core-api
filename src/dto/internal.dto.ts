@@ -1,5 +1,5 @@
-import { IsDateString, IsIn, IsInt, IsNotEmpty, IsString, Min, Matches, IsOptional } from 'class-validator';
-import { CALL_ENDED_REASONS, BRIDGE_COMMANDS } from '../common/enums';
+import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { BRIDGE_COMMANDS, CALL_ENDED_REASONS } from '../common/enums';
 import { PHONE_REGEX } from '../common/validators';
 
 export class EnsureCallerDto {
@@ -49,7 +49,7 @@ export class BridgeEndedDto {
   @IsString() call_session_id!: string;
   @Matches(PHONE_REGEX) phone_e164!: string;
   @IsDateString() ended_at!: string;
-  @IsString() reason!: string;
+  @IsIn(CALL_ENDED_REASONS) reason!: (typeof CALL_ENDED_REASONS)[number];
 }
 
 export class PaymentCreditDto {
@@ -62,11 +62,15 @@ export class PaymentCreditDto {
   @IsString() provider_status!: string;
 }
 
-export class AdminAdjustDto {
-  @IsInt() @Min(1) seconds!: number;
-  @IsOptional() @IsString() reason?: string;
+export class AdminReasonDto {
+  @IsOptional() @IsString() @IsNotEmpty() reason?: string;
 }
 
-export class AdminIdentityHeaderDto {
-  @IsString() @IsNotEmpty() identity!: string;
+export class AdminAdjustDto {
+  @IsInt() @Min(1) seconds!: number;
+  @IsOptional() @IsString() @IsNotEmpty() reason?: string;
+}
+
+export class AdminTerminateDto {
+  @IsOptional() @IsString() @IsNotEmpty() reason?: string;
 }

@@ -1,69 +1,62 @@
 # gpt-line-core-api
 
-NestJS + TypeScript service implementing the GPT-Line Core Platform API in `docs/spec.md`.
+Core business API for GPT-Line (NestJS + TypeScript + PostgreSQL + Redis + TypeORM), implemented from `docs/spec.md`.
 
-## Features implemented
-- Canonical E.164 account model keyed by `phone_e164` only.
-- Auto account creation (`active`, zero balance) on first ensure/balance/preflight/payment access.
-- Call preflight authorization with deny-prompt mapping and one-active-call Redis lock.
-- Call lifecycle tracking, command polling/ack, bridge warning/force-end generation.
-- Exact idempotent call finalization debit path.
-- Payment credit application with `payment_txn_id` idempotency.
-- Append-only balance ledger transactionally coupled with balance changes.
-- Admin APIs for account status, balance adjustments, call listings, termination, and audit log writes.
-- OpenAPI at `/internal/docs`.
+## What is implemented
+- Canonical `phone_e164` account model (auto-create on caller ensure/balance/preflight/payment paths).
+- Telephony call flow: ensure caller, balance phrase in Hebrew, preflight allow/deny, command poll/ack, end-call billing + debit.
+- Bridge events: connected/warning/cutoff/ended lifecycle support.
+- Payments: idempotent credit apply by `payment_txn_id`.
+- Admin: summary, account list/detail, block/unblock, credit/debit, call list/detail, terminate active call.
+- Balance ledger + admin audit log for all mutating balance/admin operations.
+- Redis active-call lock with stale-lock reconciliation against PostgreSQL and safe lock release by lock owner.
 
-## Tech stack
+## Prerequisites
 - Node.js 22
-- NestJS 11
-- TypeScript
+- npm
 - PostgreSQL 16
 - Redis 7
-- TypeORM
+- Docker (required for integration tests)
 
-## Quickstart
+## Environment
+Copy `.env.example` to `.env` and set values:
+
 ```bash
 cp .env.example .env
+```
+
+Required:
+- `DATABASE_URL`
+- `REDIS_URL`
+- `INTERNAL_SERVICE_TOKEN`
+- `ADMIN_API_TOKEN`
+
+## Run locally
+```bash
 npm install
-docker compose up -d postgres redis
 npm run typeorm migration:run -- -d src/database/typeorm.config.ts
 npm run start:dev
 ```
 
-## Endpoints
-### Internal Telephony
-- `POST /internal/telephony/caller/ensure`
-- `GET /internal/telephony/balance/:phone_e164`
-- `POST /internal/telephony/calls/preflight`
-- `GET /internal/telephony/calls/:call_session_id/command`
-- `POST /internal/telephony/calls/command/ack`
-- `POST /internal/telephony/calls/end`
+The service automatically runs TypeORM migrations at app startup as well.
 
-### Internal Bridge Events
-- `POST /internal/events/bridge-connected`
-- `POST /internal/events/bridge-warning-due`
-- `POST /internal/events/bridge-cutoff-due`
-- `POST /internal/events/bridge-ended`
-
-### Internal Payments
-- `POST /internal/payments/credit`
-- `GET /internal/catalog/packages`
-
-### Admin
-- `GET /admin/summary`
-- `GET /admin/accounts`
-- `GET /admin/accounts/:phone_e164`
-- `POST /admin/accounts/:phone_e164/block`
-- `POST /admin/accounts/:phone_e164/unblock`
-- `POST /admin/accounts/:phone_e164/credit`
-- `POST /admin/accounts/:phone_e164/debit`
-- `GET /admin/calls`
-- `GET /admin/calls/:call_session_id`
-- `POST /admin/calls/:call_session_id/terminate`
-
-## Testing
+## Test
 ```bash
 npm run test:unit
 npm run test:integration
 ```
-Integration tests use testcontainers and require Docker.
+
+Notes:
+- Unit tests run without containers.
+- Integration tests use Testcontainers (PostgreSQL + Redis) and require a working Docker runtime.
+
+## Admin mutating endpoint requirements
+All mutating `/admin/*` endpoints require:
+- `Authorization: Bearer <ADMIN_API_TOKEN>`
+- `x-admin-identity: <non-empty-identity>` header
+
+Mutation request bodies support `reason` where relevant (`block`, `unblock`, `credit`, `debit`, `terminate`).
+
+## Internal docs
+Swagger is exposed at:
+- `GET /internal/docs`
