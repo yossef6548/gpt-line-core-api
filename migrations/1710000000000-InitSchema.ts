@@ -35,8 +35,6 @@ export class InitSchema1710000000000 implements MigrationInterface {
         ended_reason TEXT CHECK (ended_reason IN ('star_exit','caller_hangup','time_expired','system_error','backend_revoke','openai_error','bridge_error','telephony_disconnect')),
         billed_seconds INTEGER CHECK (billed_seconds >= 0),
         preflight_remaining_seconds INTEGER NOT NULL CHECK (preflight_remaining_seconds >= 0),
-        bridge_ended_at TIMESTAMPTZ,
-        bridge_ended_reason TEXT CHECK (bridge_ended_reason IN ('star_exit','caller_hangup','time_expired','system_error','backend_revoke','openai_error','bridge_error','telephony_disconnect')) ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS balance_ledger (

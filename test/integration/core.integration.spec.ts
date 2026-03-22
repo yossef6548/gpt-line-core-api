@@ -121,6 +121,35 @@ describe('Core API integration', () => {
     expect(rows[0].c).toBe(1);
   });
 
+  it('bridge-ended persists metadata without debiting and is idempotent', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/internal/telephony/balance/${encodeURIComponent(phone)}`)
+      .set(auth)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/internal/events/bridge-ended')
+      .set(auth)
+      .send({ call_session_id: callSessionId, phone_e164: phone, ended_at: '2026-03-16T09:46:20.000Z', reason: 'bridge_error' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/internal/events/bridge-ended')
+      .set(auth)
+      .send({ call_session_id: callSessionId, phone_e164: phone, ended_at: '2026-03-16T09:46:21.000Z', reason: 'caller_hangup' })
+      .expect(201);
+
+    const callRows = await ds.query('SELECT bridge_ended_at, bridge_ended_reason FROM call_sessions WHERE call_session_id = $1', [callSessionId]);
+    expect(callRows[0].bridge_ended_at).toBeTruthy();
+    expect(callRows[0].bridge_ended_reason).toBe('bridge_error');
+
+    const after = await request(app.getHttpServer())
+      .get(`/internal/telephony/balance/${encodeURIComponent(phone)}`)
+      .set(auth)
+      .expect(200);
+    expect(after.body.remaining_seconds).toBe(before.body.remaining_seconds);
+  });
+
   it('payment credit increments balance and repeated callback does not double-credit', async () => {
     const res = await request(app.getHttpServer())
       .post('/internal/payments/credit')
@@ -137,6 +166,8 @@ describe('Core API integration', () => {
       .expect(201);
 
     expect(dup.body.remaining_seconds).toBe(firstBalance);
+    const ledgerRows = await ds.query("SELECT count(*)::int as c FROM balance_ledger WHERE phone_e164 = $1 AND entry_type = 'purchase_credit' AND reference_id = 'txn_2'", [phone]);
+    expect(ledgerRows[0].c).toBe(1);
   });
 
   it('end call decrements balance and releases lock', async () => {
@@ -203,5 +234,43 @@ describe('Core API integration', () => {
 
     const row = await ds.query("SELECT count(*)::int as c FROM bridge_commands WHERE call_session_id = $1 AND command = 'force_end' AND reason = 'backend_revoke' AND is_acknowledged = false", [pre.body.call_session_id]);
     expect(row[0].c).toBe(1);
+  });
+
+  it('mutating admin endpoint without identity is rejected', async () => {
+    await request(app.getHttpServer())
+      .post(`/admin/accounts/${encodeURIComponent(phone)}/unblock`)
+      .set(adminAuth)
+      .send({ reason: 'reset' })
+      .expect(400);
+  });
+
+  it('admin account detail returns recent calls/purchases/ledger', async () => {
+    const detail = await request(app.getHttpServer())
+      .get(`/admin/accounts/${encodeURIComponent(phone)}`)
+      .set(adminAuth)
+      .expect(200);
+
+    expect(detail.body.account_summary.phone_e164).toBe(phone);
+    expect(Array.isArray(detail.body.recent_calls)).toBe(true);
+    expect(Array.isArray(detail.body.recent_purchases)).toBe(true);
+    expect(Array.isArray(detail.body.recent_ledger_items)).toBe(true);
+    expect(detail.body.recent_counts.calls).toBe(detail.body.recent_calls.length);
+    expect(detail.body.recent_counts.purchases).toBe(detail.body.recent_purchases.length);
+    expect(detail.body.recent_counts.ledger_items).toBe(detail.body.recent_ledger_items.length);
+  });
+
+  it('admin account list returns computed fields', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/admin/accounts?page=1')
+      .set(adminAuth)
+      .expect(200);
+
+    const target = list.body.items.find((item: any) => item.phone_e164 === phone);
+    expect(target).toBeDefined();
+    expect(target).toHaveProperty('last_call_at');
+    expect(target).toHaveProperty('lifetime_purchased_seconds');
+    expect(target).toHaveProperty('lifetime_consumed_seconds');
+    expect(list.body).toHaveProperty('limit');
+    expect(list.body).toHaveProperty('total');
   });
 });

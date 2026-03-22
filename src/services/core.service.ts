@@ -104,10 +104,22 @@ export class CoreService {
     const acquired = await this.redis.acquireActiveCall(account.phone_e164, lockOwner);
     if (acquired) return null;
 
-    const active = await this.calls.exist({ where: { phone_e164: account.phone_e164, state: 'preflighted' } });
-    const connected = await this.calls.exist({ where: { phone_e164: account.phone_e164, state: 'connected' } });
-    const warning = await this.calls.exist({ where: { phone_e164: account.phone_e164, state: 'warning_sent' } });
-    if (active || connected || warning) return 'active_call_exists';
+    const owner = await this.redis.getActiveCallOwner(account.phone_e164);
+    if (owner) {
+      const ownerCall = await this.calls.findOne({
+        where: { call_session_id: owner },
+        select: ['call_session_id', 'phone_e164', 'state'],
+      });
+      if (ownerCall && ownerCall.phone_e164 === account.phone_e164 && ownerCall.state !== 'ended') {
+        return 'active_call_exists';
+      }
+    }
+
+    const activeCallCount = await this.calls.createQueryBuilder('c')
+      .where('c.phone_e164 = :phone', { phone: account.phone_e164 })
+      .andWhere("c.state IN ('preflighted','connected','warning_sent')")
+      .getCount();
+    if (activeCallCount > 0) return 'active_call_exists';
 
     await this.redis.releaseActiveCall(account.phone_e164);
     return (await this.redis.acquireActiveCall(account.phone_e164, lockOwner)) ? null : 'active_call_exists';
@@ -178,9 +190,9 @@ export class CoreService {
     return { ok: true, billed_seconds: billed, remaining_seconds: remaining };
   }
 
-  async bridgeConnected(callSessionId: string, connectedAt: string): Promise<{ ok: boolean }> {
+  async bridgeConnected(callSessionId: string, phoneE164: string, connectedAt: string): Promise<{ ok: boolean }> {
     const session = await this.calls.findOneBy({ call_session_id: callSessionId });
-    if (session && session.state !== 'ended') {
+    if (session && session.state !== 'ended' && session.phone_e164 === phoneE164) {
       session.state = 'connected';
       session.connected_at = new Date(connectedAt);
       await this.calls.save(session);
@@ -188,9 +200,9 @@ export class CoreService {
     return { ok: true };
   }
 
-  async bridgeWarningDue(callSessionId: string): Promise<{ ok: boolean }> {
+  async bridgeWarningDue(callSessionId: string, phoneE164: string): Promise<{ ok: boolean }> {
     const session = await this.calls.findOneBy({ call_session_id: callSessionId });
-    if (!session || session.state === 'ended') return { ok: true };
+    if (!session || session.state === 'ended' || session.phone_e164 !== phoneE164) return { ok: true };
     const exists = await this.commands.exists({ where: { call_session_id: callSessionId, command: 'play_warning' } });
     if (!exists) {
       await this.commands.save(this.commands.create({ call_session_id: callSessionId, command: 'play_warning', reason: 'time_threshold' }));
@@ -211,7 +223,9 @@ export class CoreService {
     }
   }
 
-  async bridgeCutoffDue(callSessionId: string): Promise<{ ok: boolean }> {
+  async bridgeCutoffDue(callSessionId: string, phoneE164: string): Promise<{ ok: boolean }> {
+    const session = await this.calls.findOneBy({ call_session_id: callSessionId });
+    if (!session || session.phone_e164 !== phoneE164) return { ok: true };
     await this.createForceEnd(callSessionId, 'time_expired');
     return { ok: true };
   }
@@ -220,13 +234,16 @@ export class CoreService {
     const session = await this.calls.findOneBy({ call_session_id: payload.call_session_id });
     if (!session || session.phone_e164 !== payload.phone_e164) return { ok: true };
 
+    let changed = false;
     if (!session.bridge_ended_at) {
       session.bridge_ended_at = new Date(payload.ended_at);
+      changed = true;
     }
     if (!session.bridge_ended_reason) {
       session.bridge_ended_reason = payload.reason;
+      changed = true;
     }
-    await this.calls.save(session);
+    if (changed) await this.calls.save(session);
     return { ok: true };
   }
 
@@ -338,6 +355,7 @@ export class CoreService {
 
   async adminListAccounts(search?: string, status?: string, page = 1): Promise<any> {
     const limit = 50;
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const qb = this.accounts.createQueryBuilder('a')
       .addSelect('(SELECT MAX(cs.started_at) FROM call_sessions cs WHERE cs.phone_e164 = a.phone_e164)', 'last_call_at')
       .addSelect('(SELECT COALESCE(SUM(pc.granted_seconds), 0) FROM purchase_credits pc WHERE pc.phone_e164 = a.phone_e164)', 'lifetime_purchased_seconds')
@@ -346,8 +364,9 @@ export class CoreService {
     if (search) qb.andWhere('a.phone_e164 ILIKE :search', { search: `%${search}%` });
     if (status) qb.andWhere('a.status = :status', { status });
 
-    qb.orderBy('a.created_at', 'DESC').skip((page - 1) * limit).take(limit);
+    qb.orderBy('a.created_at', 'DESC').skip((safePage - 1) * limit).take(limit);
     const { entities, raw } = await qb.getRawAndEntities();
+    const total = await qb.clone().skip(undefined).take(undefined).getCount();
 
     return {
       items: entities.map((entity, idx) => ({
@@ -356,7 +375,9 @@ export class CoreService {
         lifetime_purchased_seconds: Number(raw[idx].lifetime_purchased_seconds ?? 0),
         lifetime_consumed_seconds: Number(raw[idx].lifetime_consumed_seconds ?? 0),
       })),
-      page,
+      page: safePage,
+      limit,
+      total,
     };
   }
 
@@ -388,6 +409,11 @@ export class CoreService {
       recent_calls: recentCalls,
       recent_purchases: recentPurchases,
       recent_ledger_items: recentLedger,
+      recent_counts: {
+        calls: recentCalls.length,
+        purchases: recentPurchases.length,
+        ledger_items: recentLedger.length,
+      },
     };
   }
 
@@ -408,6 +434,30 @@ export class CoreService {
   }
 
   async adminGetCall(callSessionId: string): Promise<any> {
-    return this.calls.findOneByOrFail({ call_session_id: callSessionId });
+    const call = await this.calls.findOneByOrFail({ call_session_id: callSessionId });
+    const [commands, ledgerEntries, purchaseSummary] = await Promise.all([
+      this.commands.find({ where: { call_session_id: callSessionId }, order: { created_at: 'DESC' }, take: 50 }),
+      this.ledger.find({
+        where: { phone_e164: call.phone_e164, reference_type: 'call_session', reference_id: callSessionId },
+        order: { created_at: 'DESC' },
+        take: 20,
+      }),
+      this.credits.createQueryBuilder('pc')
+        .select('COALESCE(SUM(pc.granted_seconds), 0)', 'lifetime_purchased_seconds')
+        .addSelect('COUNT(*)', 'purchase_count')
+        .where('pc.phone_e164 = :phone', { phone: call.phone_e164 })
+        .getRawOne(),
+    ]);
+
+    return {
+      call,
+      related_commands: commands,
+      related_ledger_items: ledgerEntries,
+      account_context: {
+        phone_e164: call.phone_e164,
+        lifetime_purchased_seconds: Number(purchaseSummary.lifetime_purchased_seconds ?? 0),
+        purchase_count: Number(purchaseSummary.purchase_count ?? 0),
+      },
+    };
   }
 }

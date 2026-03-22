@@ -66,11 +66,19 @@ export class AdminReasonDto {
   @IsOptional() @IsString() @IsNotEmpty() reason?: string;
 }
 
+export class AdminBlockAccountDto {
+  @IsOptional() @IsString() @IsNotEmpty() reason?: string;
+}
+
+export class AdminUnblockAccountDto {
+  @IsOptional() @IsString() @IsNotEmpty() reason?: string;
+}
+
 export class AdminAdjustDto {
   @IsInt() @Min(1) seconds!: number;
   @IsOptional() @IsString() @IsNotEmpty() reason?: string;
 }
 
-export class AdminTerminateDto {
+export class AdminTerminateCallDto {
   @IsOptional() @IsString() @IsNotEmpty() reason?: string;
 }
