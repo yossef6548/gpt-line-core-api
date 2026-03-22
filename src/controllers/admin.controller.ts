@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CoreService } from '../services/core.service';
-import { AdminAdjustDto, AdminReasonDto, AdminTerminateDto } from '../dto/internal.dto';
+import { AdminAdjustDto, AdminBlockAccountDto, AdminTerminateCallDto, AdminUnblockAccountDto } from '../dto/internal.dto';
 import { AdminTokenGuard } from '../guards/admin-token.guard';
 
 @Controller('/admin')
@@ -26,12 +26,12 @@ export class AdminController {
   getAccount(@Param('phone_e164') phone: string) { return this.core.adminGetAccount(phone); }
 
   @Post('/accounts/:phone_e164/block')
-  block(@Param('phone_e164') phone: string, @Body() body: AdminReasonDto, @Headers('x-admin-identity') identity?: string) {
+  block(@Param('phone_e164') phone: string, @Body() body: AdminBlockAccountDto, @Headers('x-admin-identity') identity?: string) {
     return this.core.adminSetStatus(phone, 'blocked', this.requireIdentity(identity), body.reason);
   }
 
   @Post('/accounts/:phone_e164/unblock')
-  unblock(@Param('phone_e164') phone: string, @Body() body: AdminReasonDto, @Headers('x-admin-identity') identity?: string) {
+  unblock(@Param('phone_e164') phone: string, @Body() body: AdminUnblockAccountDto, @Headers('x-admin-identity') identity?: string) {
     return this.core.adminSetStatus(phone, 'active', this.requireIdentity(identity), body.reason);
   }
 
@@ -54,7 +54,7 @@ export class AdminController {
   getCall(@Param('call_session_id') id: string) { return this.core.adminGetCall(id); }
 
   @Post('/calls/:call_session_id/terminate')
-  terminate(@Param('call_session_id') id: string, @Body() body: AdminTerminateDto, @Headers('x-admin-identity') identity?: string) {
+  terminate(@Param('call_session_id') id: string, @Body() body: AdminTerminateCallDto, @Headers('x-admin-identity') identity?: string) {
     return this.core.adminTerminate(id, this.requireIdentity(identity), body.reason);
   }
 }

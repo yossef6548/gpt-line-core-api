@@ -41,17 +41,17 @@ export class InternalController {
 
   @Post('/internal/events/bridge-connected')
   bridgeConnected(@Body() body: BridgeConnectedDto) {
-    return this.core.bridgeConnected(body.call_session_id, body.connected_at);
+    return this.core.bridgeConnected(body.call_session_id, body.phone_e164, body.connected_at);
   }
 
   @Post('/internal/events/bridge-warning-due')
   bridgeWarning(@Body() body: BridgeWarningDueDto) {
-    return this.core.bridgeWarningDue(body.call_session_id);
+    return this.core.bridgeWarningDue(body.call_session_id, body.phone_e164);
   }
 
   @Post('/internal/events/bridge-cutoff-due')
   bridgeCutoff(@Body() body: BridgeCutoffDueDto) {
-    return this.core.bridgeCutoffDue(body.call_session_id);
+    return this.core.bridgeCutoffDue(body.call_session_id, body.phone_e164);
   }
 
   @Post('/internal/events/bridge-ended')

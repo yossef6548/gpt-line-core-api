@@ -13,5 +13,11 @@
 
 ## Operational notes
 - Active call lock key: `active_call:{phone_e164}`, TTL 6h.
+- Preflight stale-lock handling consults PostgreSQL explicitly:
+  - checks the Redis lock owner session state
+  - checks for any active call rows (`preflighted|connected|warning_sent`)
+  - only then clears stale lock and retries lock acquisition
 - Payment credit and call end are idempotent by `payment_txn_id` and ended call state.
 - Debits/credits always write `balance_ledger` in same DB transaction.
+- `POST /internal/events/bridge-ended` stores `bridge_ended_at` / `bridge_ended_reason` only, idempotently, and does not debit.
+- Mutating admin endpoints require `x-admin-identity`; missing header is rejected with `400`.

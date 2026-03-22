@@ -6,10 +6,12 @@ Core business API for GPT-Line (NestJS + TypeScript + PostgreSQL + Redis + TypeO
 - Canonical `phone_e164` account model (auto-create on caller ensure/balance/preflight/payment paths).
 - Telephony call flow: ensure caller, balance phrase in Hebrew, preflight allow/deny, command poll/ack, end-call billing + debit.
 - Bridge events: connected/warning/cutoff/ended lifecycle support.
+  - `bridge-ended` persists bridge termination metadata (`bridge_ended_at`, `bridge_ended_reason`) idempotently and never debits balance.
 - Payments: idempotent credit apply by `payment_txn_id`.
 - Admin: summary, account list/detail, block/unblock, credit/debit, call list/detail, terminate active call.
 - Balance ledger + admin audit log for all mutating balance/admin operations.
 - Redis active-call lock with stale-lock reconciliation against PostgreSQL and safe lock release by lock owner.
+  - If Redis lock exists, reconciliation checks both lock owner session and active-call rows in PostgreSQL before treating lock as stale.
 
 ## Prerequisites
 - Node.js 22
@@ -56,6 +58,7 @@ All mutating `/admin/*` endpoints require:
 - `x-admin-identity: <non-empty-identity>` header
 
 Mutation request bodies support `reason` where relevant (`block`, `unblock`, `credit`, `debit`, `terminate`).
+Missing `x-admin-identity` returns `400 Bad Request` (no silent fallback).
 
 ## Internal docs
 Swagger is exposed at:
