@@ -10,6 +10,7 @@ import { BalanceLedgerEntity } from './entities/balance-ledger.entity';
 import { PurchaseCreditEntity } from './entities/purchase-credit.entity';
 import { BridgeCommandEntity } from './entities/bridge-command.entity';
 import { AdminAuditLogEntity } from './entities/admin-audit-log.entity';
+import { PaymentOutcomeEntity } from './entities/payment-outcome.entity';
 import { CoreService } from './services/core.service';
 import { RedisService } from './redis/redis.service';
 import { InternalController } from './controllers/internal.controller';
@@ -25,6 +26,7 @@ const entities = [
   PurchaseCreditEntity,
   BridgeCommandEntity,
   AdminAuditLogEntity,
+  PaymentOutcomeEntity,
 ];
 
 @Module({

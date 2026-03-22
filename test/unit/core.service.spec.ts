@@ -30,6 +30,7 @@ describe('CoreService', () => {
   const commands = repoMock();
   const ledger = repoMock();
   const credits = repoMock();
+  const paymentOutcomes = repoMock();
   const audits = repoMock();
 
   beforeEach(() => {
@@ -52,7 +53,7 @@ describe('CoreService', () => {
         getCount: jest.fn().mockResolvedValue(0),
       }),
     });
-    service = new CoreService(ds, redis, accounts as any, packages as any, calls as any, commands as any, ledger as any, credits as any, audits as any);
+    service = new CoreService(ds, redis, accounts as any, packages as any, calls as any, commands as any, ledger as any, credits as any, paymentOutcomes as any, audits as any);
   });
 
   it('preflight allow path', async () => {
@@ -108,7 +109,7 @@ describe('CoreService', () => {
 
   it('idempotent payment credit', async () => {
     accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status: 'active', remaining_seconds: 10 });
-    credits.findOneBy.mockResolvedValue({ payment_txn_id: 'txn1' });
+    paymentOutcomes.findOneBy.mockResolvedValue({ payment_txn_id: 'txn1' });
     accounts.findOneByOrFail.mockResolvedValue({ phone_e164: '+972', remaining_seconds: 10 });
     const res = await service.paymentCredit({ payment_txn_id: 'txn1', phone_e164: '+972', package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'x', provider_status: 'approved' });
     expect(res.remaining_seconds).toBe(10);
@@ -117,7 +118,7 @@ describe('CoreService', () => {
 
   it('payment credit applies approved purchase exactly once', async () => {
     accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status: 'active', remaining_seconds: 10 });
-    credits.findOneBy.mockResolvedValue(null);
+    paymentOutcomes.findOneBy.mockResolvedValue(null);
     const trx = {
       getRepository: jest.fn().mockImplementation(() => ({
         save: jest.fn(async (v) => v),
@@ -133,11 +134,18 @@ describe('CoreService', () => {
 
   it('payment credit does not apply for non-approved provider status', async () => {
     accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status: 'active', remaining_seconds: 10 });
-    credits.findOneBy.mockResolvedValue(null);
-    accounts.findOneByOrFail.mockResolvedValue({ phone_e164: '+972', remaining_seconds: 10 });
+    paymentOutcomes.findOneBy.mockResolvedValue(null);
+    const trx = {
+      getRepository: jest.fn().mockImplementation(() => ({
+        save: jest.fn(async (v) => v),
+        create: (v: any) => v,
+        findOneByOrFail: jest.fn(async () => ({ phone_e164: '+972', remaining_seconds: 10 })),
+      })),
+    };
+    ds.transaction.mockImplementation(async (fn: any) => fn(trx));
     const res = await service.paymentCredit({ payment_txn_id: 'txn_fail', phone_e164: '+972', package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'x', provider_status: 'failed' });
     expect(res.remaining_seconds).toBe(10);
-    expect(ds.transaction).not.toHaveBeenCalled();
+    expect(ds.transaction).toHaveBeenCalledTimes(1);
   });
 
   it.each(['blocked', 'fraud_review'])('payment credit rejects non-active account %s', async (status) => {
@@ -262,13 +270,19 @@ describe('CoreService', () => {
       getCount: jest.fn().mockResolvedValue(4),
     };
     credits.createQueryBuilder.mockReturnValue(qb);
+    const failedQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(2),
+    };
+    paymentOutcomes.createQueryBuilder.mockReturnValue(failedQb);
     const res = await service.adminSummary();
     expect(res).toEqual({
       active_call_count: 2,
       active_account_count: 8,
       blocked_account_count: 1,
       recent_purchase_count_24h: 4,
-      recent_failed_purchase_count_24h: 0,
+      recent_failed_purchase_count_24h: 2,
     });
   });
 

@@ -170,7 +170,7 @@ describe('Core API integration', () => {
     expect(ledgerRows[0].c).toBe(1);
   });
 
-  it('non-approved payment status does not credit balance or write purchase/ledger rows', async () => {
+  it('non-approved payment status does not credit balance, writes outcome row, and no purchase/ledger rows', async () => {
     const before = await request(app.getHttpServer())
       .get(`/internal/telephony/balance/${encodeURIComponent(phone)}`)
       .set(auth)
@@ -186,6 +186,10 @@ describe('Core API integration', () => {
 
     const purchaseRows = await ds.query('SELECT count(*)::int as c FROM purchase_credits WHERE payment_txn_id = $1', ['txn_fail_1']);
     expect(purchaseRows[0].c).toBe(0);
+    const outcomeRows = await ds.query('SELECT provider_status, was_credited FROM payment_outcomes WHERE payment_txn_id = $1', ['txn_fail_1']);
+    expect(outcomeRows).toHaveLength(1);
+    expect(outcomeRows[0].provider_status).toBe('failed');
+    expect(outcomeRows[0].was_credited).toBe(false);
     const ledgerRows = await ds.query("SELECT count(*)::int as c FROM balance_ledger WHERE reference_id = 'txn_fail_1'", []);
     expect(ledgerRows[0].c).toBe(0);
   });
@@ -196,6 +200,25 @@ describe('Core API integration', () => {
       .set(auth)
       .send({ payment_txn_id: 'txn_invalid_1', phone_e164: phone, package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'cardcom', provider_status: 'pending' })
       .expect(400);
+  });
+
+  it('repeated non-approved callback is idempotent and not double-counted', async () => {
+    await request(app.getHttpServer())
+      .post('/internal/payments/credit')
+      .set(auth)
+      .send({ payment_txn_id: 'txn_fail_2', phone_e164: phone, package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'cardcom', provider_status: 'cancelled' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/internal/payments/credit')
+      .set(auth)
+      .send({ payment_txn_id: 'txn_fail_2', phone_e164: phone, package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'cardcom', provider_status: 'cancelled' })
+      .expect(201);
+
+    const outcomeRows = await ds.query('SELECT count(*)::int as c FROM payment_outcomes WHERE payment_txn_id = $1', ['txn_fail_2']);
+    expect(outcomeRows[0].c).toBe(1);
+    const purchaseRows = await ds.query('SELECT count(*)::int as c FROM purchase_credits WHERE payment_txn_id = $1', ['txn_fail_2']);
+    expect(purchaseRows[0].c).toBe(0);
   });
 
   it('blocked account rejects payment credit', async () => {
@@ -331,6 +354,6 @@ describe('Core API integration', () => {
       .expect(200);
 
     expect(summary.body.recent_purchase_count_24h).toBeGreaterThanOrEqual(3);
-    expect(summary.body.recent_failed_purchase_count_24h).toBe(0);
+    expect(summary.body.recent_failed_purchase_count_24h).toBeGreaterThanOrEqual(1);
   });
 });

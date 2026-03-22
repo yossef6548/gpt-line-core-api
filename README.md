@@ -14,7 +14,7 @@ Core business API for GPT-Line (NestJS + TypeScript + PostgreSQL + Redis + TypeO
 - Balance ledger + admin audit log for all mutating balance/admin operations.
 - Redis active-call lock with stale-lock reconciliation against PostgreSQL and safe lock release by lock owner.
   - If Redis lock exists, reconciliation checks both lock owner session and active-call rows in PostgreSQL before treating lock as stale.
-- Admin summary reports `recent_purchase_count_24h` from persisted credited purchases; `recent_failed_purchase_count_24h` is `0` in v1 (failed purchases are not persisted in Core).
+- Admin summary reports `recent_purchase_count_24h` from persisted credited purchases and `recent_failed_purchase_count_24h` from persisted non-approved payment outcomes.
 
 ## Prerequisites
 - Node.js 22
