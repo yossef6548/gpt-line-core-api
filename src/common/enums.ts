@@ -31,6 +31,14 @@ export const PAYMENT_RESULT_PROMPTS = [
   'payment_unavailable',
 ] as const;
 
+export const PAYMENT_PROVIDER_STATUSES = [
+  'approved',
+  'failed',
+  'cancelled',
+  'unavailable',
+] as const;
+export type PaymentProviderStatus = (typeof PAYMENT_PROVIDER_STATUSES)[number];
+
 export const CALL_STATES = ['preflighted', 'connected', 'warning_sent', 'ended'] as const;
 export type CallState = (typeof CALL_STATES)[number];
 

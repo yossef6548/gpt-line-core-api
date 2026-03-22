@@ -328,6 +328,9 @@ in the same DB transaction.
 
 Unique by `payment_txn_id`.
 
+Credits are applied only when `provider_status = approved`.
+For non-approved statuses, Core returns success without mutating balance or purchase/ledger rows.
+
 ### Rule 10: End-call idempotency
 
 Repeated end-call requests must never double-debit.
@@ -618,6 +621,12 @@ Behavior:
   "remaining_seconds": 887
 }
 ```
+
+Behavior:
+
+- only `provider_status = approved` can increment balance
+- non-approved provider statuses are accepted but do not change balance and do not create `purchase_credits` / `balance_ledger` purchase rows
+- repeated callbacks are idempotent by `payment_txn_id`
 
 ### 10.2 Package catalog
 

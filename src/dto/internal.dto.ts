@@ -1,5 +1,5 @@
 import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min } from 'class-validator';
-import { BRIDGE_COMMANDS, CALL_ENDED_REASONS } from '../common/enums';
+import { BRIDGE_COMMANDS, CALL_ENDED_REASONS, PAYMENT_PROVIDER_STATUSES } from '../common/enums';
 import { PHONE_REGEX } from '../common/validators';
 
 export class EnsureCallerDto {
@@ -59,7 +59,7 @@ export class PaymentCreditDto {
   @IsInt() @Min(1) amount_agorot!: number;
   @IsInt() @Min(1) granted_seconds!: number;
   @IsString() provider_name!: string;
-  @IsString() provider_status!: string;
+  @IsIn(PAYMENT_PROVIDER_STATUSES) provider_status!: (typeof PAYMENT_PROVIDER_STATUSES)[number];
 }
 
 export class AdminReasonDto {
