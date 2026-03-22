@@ -18,6 +18,8 @@
   - checks for any active call rows (`preflighted|connected|warning_sent`)
   - only then clears stale lock and retries lock acquisition
 - Payment credit and call end are idempotent by `payment_txn_id` and ended call state.
+- Payment credits mutate balance only when `provider_status=approved`; non-approved statuses return success without purchase/ledger writes.
 - Debits/credits always write `balance_ledger` in same DB transaction.
+- Admin summary `recent_failed_purchase_count_24h` is fixed at `0` in v1 because failed purchases are not persisted by Core.
 - `POST /internal/events/bridge-ended` stores `bridge_ended_at` / `bridge_ended_reason` only, idempotently, and does not debit.
 - Mutating admin endpoints require `x-admin-identity`; missing header is rejected with `400`.

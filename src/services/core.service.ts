@@ -11,7 +11,7 @@ import { PurchaseCreditEntity } from '../entities/purchase-credit.entity';
 import { AdminAuditLogEntity } from '../entities/admin-audit-log.entity';
 import { RedisService } from '../redis/redis.service';
 import { billedSeconds, formatHebrewBalance, validatePhoneE164 } from '../common/validators';
-import type { CallEndedReason, DenyPrompt } from '../common/enums';
+import { PAYMENT_PROVIDER_STATUSES, type CallEndedReason, type DenyPrompt, type PaymentProviderStatus } from '../common/enums';
 
 @Injectable()
 export class CoreService {
@@ -248,12 +248,19 @@ export class CoreService {
   }
 
   async paymentCredit(input: {
-    payment_txn_id: string; phone_e164: string; package_code: string; amount_agorot: number; granted_seconds: number; provider_name: string; provider_status: string;
+    payment_txn_id: string; phone_e164: string; package_code: string; amount_agorot: number; granted_seconds: number; provider_name: string; provider_status: PaymentProviderStatus;
   }): Promise<{ ok: boolean; phone_e164: string; remaining_seconds: number }> {
+    if (!PAYMENT_PROVIDER_STATUSES.includes(input.provider_status)) {
+      throw new BadRequestException('unsupported provider_status');
+    }
     const account = await this.ensureCaller(input.phone_e164);
     if (account.status !== 'active') throw new BadRequestException('account status disallows credits');
     const existing = await this.credits.findOneBy({ payment_txn_id: input.payment_txn_id });
     if (existing) {
+      const current = await this.accounts.findOneByOrFail({ phone_e164: input.phone_e164 });
+      return { ok: true, phone_e164: input.phone_e164, remaining_seconds: current.remaining_seconds };
+    }
+    if (input.provider_status !== 'approved') {
       const current = await this.accounts.findOneByOrFail({ phone_e164: input.phone_e164 });
       return { ok: true, phone_e164: input.phone_e164, remaining_seconds: current.remaining_seconds };
     }
@@ -282,19 +289,18 @@ export class CoreService {
 
   async adminSummary(): Promise<any> {
     const since = new Date(Date.now() - 24 * 3600 * 1000);
-    const [activeCallCount, activeAccountCount, blockedAccountCount, recentPurchaseCount, recentFailedPurchaseCount] = await Promise.all([
+    const [activeCallCount, activeAccountCount, blockedAccountCount, recentPurchaseCount] = await Promise.all([
       this.calls.count({ where: [{ state: 'preflighted' }, { state: 'connected' }, { state: 'warning_sent' }] as any }),
       this.accounts.count({ where: { status: 'active' } }),
       this.accounts.count({ where: { status: 'blocked' } }),
-      this.credits.createQueryBuilder('pc').where('pc.provider_status = :status', { status: 'approved' }).andWhere('pc.created_at >= :since', { since }).getCount(),
-      this.credits.createQueryBuilder('pc').where('pc.provider_status != :status', { status: 'approved' }).andWhere('pc.created_at >= :since', { since }).getCount(),
+      this.credits.createQueryBuilder('pc').where('pc.created_at >= :since', { since }).getCount(),
     ]);
     return {
       active_call_count: activeCallCount,
       active_account_count: activeAccountCount,
       blocked_account_count: blockedAccountCount,
       recent_purchase_count_24h: recentPurchaseCount,
-      recent_failed_purchase_count_24h: recentFailedPurchaseCount,
+      recent_failed_purchase_count_24h: 0,
     };
   }
 

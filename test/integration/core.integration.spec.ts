@@ -170,6 +170,56 @@ describe('Core API integration', () => {
     expect(ledgerRows[0].c).toBe(1);
   });
 
+  it('non-approved payment status does not credit balance or write purchase/ledger rows', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/internal/telephony/balance/${encodeURIComponent(phone)}`)
+      .set(auth)
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/internal/payments/credit')
+      .set(auth)
+      .send({ payment_txn_id: 'txn_fail_1', phone_e164: phone, package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'cardcom', provider_status: 'failed' })
+      .expect(201);
+
+    expect(res.body.remaining_seconds).toBe(before.body.remaining_seconds);
+
+    const purchaseRows = await ds.query('SELECT count(*)::int as c FROM purchase_credits WHERE payment_txn_id = $1', ['txn_fail_1']);
+    expect(purchaseRows[0].c).toBe(0);
+    const ledgerRows = await ds.query("SELECT count(*)::int as c FROM balance_ledger WHERE reference_id = 'txn_fail_1'", []);
+    expect(ledgerRows[0].c).toBe(0);
+  });
+
+  it('unsupported provider status is rejected by validation', async () => {
+    await request(app.getHttpServer())
+      .post('/internal/payments/credit')
+      .set(auth)
+      .send({ payment_txn_id: 'txn_invalid_1', phone_e164: phone, package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'cardcom', provider_status: 'pending' })
+      .expect(400);
+  });
+
+  it('blocked account rejects payment credit', async () => {
+    const blockedPhone = '+972507777777';
+    await request(app.getHttpServer())
+      .post('/internal/telephony/caller/ensure')
+      .set(auth)
+      .send({ phone_e164: blockedPhone, source: 'telephony', provider_call_id: 'seed_blocked' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/admin/accounts/${encodeURIComponent(blockedPhone)}/block`)
+      .set(adminAuth)
+      .set('x-admin-identity', 'admin@test')
+      .send({ reason: 'compliance' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/internal/payments/credit')
+      .set(auth)
+      .send({ payment_txn_id: 'txn_blocked_1', phone_e164: blockedPhone, package_code: 'P05', amount_agorot: 3000, granted_seconds: 300, provider_name: 'cardcom', provider_status: 'approved' })
+      .expect(400);
+  });
+
   it('end call decrements balance and releases lock', async () => {
     const before = await request(app.getHttpServer())
       .get(`/internal/telephony/balance/${encodeURIComponent(phone)}`)
@@ -272,5 +322,15 @@ describe('Core API integration', () => {
     expect(target).toHaveProperty('lifetime_consumed_seconds');
     expect(list.body).toHaveProperty('limit');
     expect(list.body).toHaveProperty('total');
+  });
+
+  it('admin summary purchase counters reflect persisted successful purchase model', async () => {
+    const summary = await request(app.getHttpServer())
+      .get('/admin/summary')
+      .set(adminAuth)
+      .expect(200);
+
+    expect(summary.body.recent_purchase_count_24h).toBeGreaterThanOrEqual(3);
+    expect(summary.body.recent_failed_purchase_count_24h).toBe(0);
   });
 });

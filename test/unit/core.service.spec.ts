@@ -115,6 +115,44 @@ describe('CoreService', () => {
     expect(ds.transaction).not.toHaveBeenCalled();
   });
 
+  it('payment credit applies approved purchase exactly once', async () => {
+    accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status: 'active', remaining_seconds: 10 });
+    credits.findOneBy.mockResolvedValue(null);
+    const trx = {
+      getRepository: jest.fn().mockImplementation(() => ({
+        save: jest.fn(async (v) => v),
+        create: (v: any) => v,
+        findOneByOrFail: jest.fn(async () => ({ phone_e164: '+972', remaining_seconds: 610 })),
+      })),
+    };
+    ds.transaction.mockImplementation(async (fn: any) => fn(trx));
+    const res = await service.paymentCredit({ payment_txn_id: 'txn_new', phone_e164: '+972', package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'x', provider_status: 'approved' });
+    expect(res.remaining_seconds).toBe(1210);
+    expect(ds.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('payment credit does not apply for non-approved provider status', async () => {
+    accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status: 'active', remaining_seconds: 10 });
+    credits.findOneBy.mockResolvedValue(null);
+    accounts.findOneByOrFail.mockResolvedValue({ phone_e164: '+972', remaining_seconds: 10 });
+    const res = await service.paymentCredit({ payment_txn_id: 'txn_fail', phone_e164: '+972', package_code: 'P10', amount_agorot: 5000, granted_seconds: 600, provider_name: 'x', provider_status: 'failed' });
+    expect(res.remaining_seconds).toBe(10);
+    expect(ds.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['blocked', 'fraud_review'])('payment credit rejects non-active account %s', async (status) => {
+    accounts.findOneBy.mockResolvedValue({ phone_e164: '+972', status, remaining_seconds: 10 });
+    await expect(service.paymentCredit({
+      payment_txn_id: `txn_${status}`,
+      phone_e164: '+972',
+      package_code: 'P10',
+      amount_agorot: 5000,
+      granted_seconds: 600,
+      provider_name: 'x',
+      provider_status: 'approved',
+    })).rejects.toThrow(BadRequestException);
+  });
+
   it('idempotent call end', async () => {
     calls.findOneBy.mockResolvedValue({ call_session_id: 'c1', phone_e164: '+972', state: 'ended', billed_seconds: 15 });
     accounts.findOneByOrFail.mockResolvedValue({ phone_e164: '+972', remaining_seconds: 90 });
@@ -214,6 +252,24 @@ describe('CoreService', () => {
     expect(res.total).toBe(1);
     expect(res.items[0].lifetime_purchased_seconds).toBe(900);
     expect(res.items[0].lifetime_consumed_seconds).toBe(400);
+  });
+
+  it('admin summary purchase counters align with successful-purchase model', async () => {
+    calls.count.mockResolvedValue(2);
+    accounts.count.mockResolvedValueOnce(8).mockResolvedValueOnce(1);
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(4),
+    };
+    credits.createQueryBuilder.mockReturnValue(qb);
+    const res = await service.adminSummary();
+    expect(res).toEqual({
+      active_call_count: 2,
+      active_account_count: 8,
+      blocked_account_count: 1,
+      recent_purchase_count_24h: 4,
+      recent_failed_purchase_count_24h: 0,
+    });
   });
 
   it('end call validates session phone match', async () => {
